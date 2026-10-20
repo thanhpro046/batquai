@@ -1,24 +1,32 @@
-
 <!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#101114">
 <title>La Kinh Bát Quái 3D</title>
 <style>
 *{box-sizing:border-box}
 html,body{
  margin:0;width:100%;height:100%;overflow:hidden;
- background:#050403;color:#e8d19a;
+ background:#101114;color:#eee
 }
 body{display:flex;align-items:center;justify-content:center}
-#app{width:100vmin;height:100vmin;position:relative}
-canvas{position:absolute;width:100%;height:100%;inset:0}
-#ui{position:fixed;top:16px;left:0;width:100%;
- text-align:center;font:12px Arial;letter-spacing:4px;
- color:#c6a766;pointer-events:none}
-#info{position:fixed;bottom:15px;width:100%;
- text-align:center;color:#bca16a;font:11px Arial}
+#app{
+ width:min(100vw,100vh);height:min(100vw,100vh);
+ position:relative;overflow:hidden
+}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#title{
+ position:fixed;top:12px;width:100%;text-align:center;
+ font:10px Arial;letter-spacing:3px;color:#bfc2cb;
+ pointer-events:none
+}
+#info{
+ position:fixed;bottom:10px;width:100%;text-align:center;
+ font:9px Arial;letter-spacing:2px;color:#777b85;
+ pointer-events:none
+}
 </style>
 </head>
 <body>
@@ -26,8 +34,8 @@ canvas{position:absolute;width:100%;height:100%;inset:0}
  <canvas id="gl"></canvas>
  <canvas id="overlay"></canvas>
 </div>
-<div id="ui">羅經八卦 · LA KINH BÁT QUÁI</div>
-<div id="info">WEBGL · AUTO ZOOM · 40,000 LINES</div>
+<div id="title">羅經八卦 · LA KINH BÁT QUÁI</div>
+<div id="info">CELESTIAL COMPASS · WEBGL</div>
 
 <script>
 "use strict";
@@ -35,13 +43,14 @@ canvas{position:absolute;width:100%;height:100%;inset:0}
 const canvas=document.getElementById("gl");
 const overlay=document.getElementById("overlay");
 const ctx=overlay.getContext("2d");
+
 const gl=canvas.getContext("webgl",{
  alpha:false,antialias:true,powerPreference:"high-performance"
 });
 
 if(!gl){
- document.getElementById("info").textContent="Thiết bị không hỗ trợ WebGL";
- throw new Error("WebGL unavailable");
+ document.getElementById("info").textContent="WebGL không được hỗ trợ";
+ throw Error("WebGL unavailable");
 }
 
 const vs=`
@@ -55,28 +64,25 @@ attribute float aType;
 uniform float uTime;
 uniform float uAspect;
 uniform float uZoom;
-uniform float uTilt;
 
 varying float vAlpha;
 varying float vType;
 
 void main(){
- float a=aAngle+uTime*(0.025+0.055*(1.0-aRadius));
- float pulse=sin(uTime*1.4+aPhase)*0.003;
- float r=aRadius+pulse;
+ float a=aAngle+uTime*(0.012+0.035*(1.0-aRadius));
+ float r=aRadius+sin(uTime*1.3+aPhase)*0.002;
 
- // Chuyển động phối cảnh theo chiều sâu
- float depth=1.0+uTilt*sin(a+uTime*0.35)*0.10;
- float rr=(r+aSide*aLength*0.5)*depth;
-
+ float rr=r+aSide*aLength*0.5;
  vec2 p=vec2(cos(a)*rr,sin(a)*rr);
- p.y*=0.90+0.10*cos(a+uTime*0.2);
+
+ p.y*=0.96+0.04*cos(a+uTime*0.2);
  p.x/=uAspect;
  p*=uZoom;
 
  gl_Position=vec4(p,0.0,1.0);
  gl_PointSize=1.0;
- vAlpha=0.48+0.52*(0.5+0.5*sin(uTime*1.8+aPhase));
+
+ vAlpha=0.08+0.5*(0.5+0.5*sin(uTime+aPhase));
  vType=aType;
 }`;
 
@@ -84,16 +90,19 @@ const fs=`
 precision mediump float;
 varying float vAlpha;
 varying float vType;
+
 void main(){
- vec3 gold=vec3(0.78,0.64,0.36);
- vec3 light=vec3(1.0,0.88,0.59);
- vec3 col=mix(gold,light,0.25+0.25*sin(vType*6.283));
+ vec3 col=mix(
+  vec3(0.53,0.55,0.60),
+  vec3(0.98,0.98,1.0),
+  0.3+0.3*sin(vType*6.283)
+ );
  gl_FragColor=vec4(col,vAlpha);
 }`;
 
-function shader(type,source){
+function makeShader(type,src){
  const s=gl.createShader(type);
- gl.shaderSource(s,source);
+ gl.shaderSource(s,src);
  gl.compileShader(s);
  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))
   throw Error(gl.getShaderInfoLog(s));
@@ -101,73 +110,82 @@ function shader(type,source){
 }
 
 const program=gl.createProgram();
-gl.attachShader(program,shader(gl.VERTEX_SHADER,vs));
-gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fs));
+gl.attachShader(program,makeShader(gl.VERTEX_SHADER,vs));
+gl.attachShader(program,makeShader(gl.FRAGMENT_SHADER,fs));
 gl.linkProgram(program);
+
 if(!gl.getProgramParameter(program,gl.LINK_STATUS))
  throw Error(gl.getProgramInfoLog(program));
+
 gl.useProgram(program);
 
 const loc={};
 [
  "aAngle","aRadius","aLength","aSide","aPhase","aType",
- "uTime","uAspect","uZoom","uTilt"
+ "uTime","uAspect","uZoom"
 ].forEach(n=>{
  loc[n]=n.startsWith("u")
- ?gl.getUniformLocation(program,n)
- :gl.getAttribLocation(program,n);
+  ?gl.getUniformLocation(program,n)
+  :gl.getAttribLocation(program,n);
 });
 
-const numLines=40000;
-const stride=6;
-const vertices=new Float32Array(numLines*2*stride);
+// Hạt và vệt sáng nền
+const count=18000,stride=6;
+const data=new Float32Array(count*2*stride);
 let seed=721038;
-function rand(){
+
+function random(){
  seed=(seed*1664525+1013904223)>>>0;
  return seed/4294967296;
 }
 
-for(let i=0;i<numLines;i++){
- const angle=rand()*Math.PI*2;
- const radius=0.12+Math.sqrt(rand())*0.82;
- const length=0.002+rand()*0.012;
- const phase=rand()*Math.PI*2;
- const type=rand();
+for(let i=0;i<count;i++){
+ const a=random()*Math.PI*2;
+ const r=.08+Math.sqrt(random())*.92;
+ const len=.001+random()*.009;
+ const phase=random()*Math.PI*2;
+ const type=random();
+
  for(let j=0;j<2;j++){
   const k=(i*2+j)*stride;
-  vertices[k]=angle;
-  vertices[k+1]=radius;
-  vertices[k+2]=length;
-  vertices[k+3]=j===0?-1:1;
-  vertices[k+4]=phase;
-  vertices[k+5]=type;
+  data[k]=a;
+  data[k+1]=r;
+  data[k+2]=len;
+  data[k+3]=j===0?-1:1;
+  data[k+4]=phase;
+  data[k+5]=type;
  }
 }
 
 const buffer=gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
-gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
+gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
 
 [
  ["aAngle",0],["aRadius",1],["aLength",2],
  ["aSide",3],["aPhase",4],["aType",5]
 ].forEach(([name,index])=>{
  gl.enableVertexAttribArray(loc[name]);
- gl.vertexAttribPointer(loc[name],1,gl.FLOAT,false,stride*4,index*4);
+ gl.vertexAttribPointer(
+  loc[name],1,gl.FLOAT,false,stride*4,index*4
+ );
 });
 
 gl.enable(gl.BLEND);
 gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-gl.clearColor(0.018,0.014,0.009,1);
+gl.clearColor(.055,.057,.064,1);
 
 function resize(){
- const dpr=Math.min(devicePixelRatio||1,2);
+ const dpr=Math.min(devicePixelRatio||1,1.5);
  const r=canvas.getBoundingClientRect();
  const w=Math.max(1,Math.round(r.width*dpr));
  const h=Math.max(1,Math.round(r.height*dpr));
+
  if(canvas.width!==w||canvas.height!==h){
-  canvas.width=overlay.width=w;
-  canvas.height=overlay.height=h;
+  canvas.width=w;
+  canvas.height=h;
+  overlay.width=w;
+  overlay.height=h;
  }
  gl.viewport(0,0,w,h);
 }
@@ -180,7 +198,7 @@ function circle(r,color,width=1){
  ctx.stroke();
 }
 
-function label(txt,r,a,size,color){
+function textAt(txt,r,a,size,color){
  ctx.save();
  ctx.rotate(a);
  ctx.textAlign="center";
@@ -195,143 +213,285 @@ const gua=[
  ["坎","☵"],["艮","☶"],["震","☳"],["巽","☴"],
  ["離","☲"],["坤","☷"],["兌","☱"],["乾","☰"]
 ];
-const dirs=["北","東北","東","東南","南","西南","西","西北"];
+
+const directions=["北","東北","東","東南","南","西南","西","西北"];
+
 const mountains=[
  "子","癸","丑","艮","寅","甲","卯","乙",
  "辰","巽","巳","丙","午","丁","未","坤",
  "申","庚","酉","辛","戌","乾","亥","壬"
 ];
 
-function drawOverlay(t,zoom){
+const stems=[
+ "甲","乙","丙","丁","戊","己","庚","辛","壬","癸",
+ "子","丑","寅","卯","辰","巳","午","未","申","酉",
+ "戌","亥"
+];
+
+function drawCompass(t,zoom){
  const w=overlay.width,h=overlay.height;
- const s=Math.min(w,h),R=s*0.46;
+ const s=Math.min(w,h),R=s*.445;
+
  ctx.setTransform(1,0,0,1,0,0);
  ctx.clearRect(0,0,w,h);
  ctx.save();
+
  ctx.translate(w/2,h/2);
+
+ // Zoom toàn bộ la kinh, bao gồm Thái Cực và chữ
  ctx.scale(zoom,zoom);
 
- // Toàn bộ vòng la bàn phóng to thu nhỏ đồng bộ
- for(let i=0;i<15;i++){
-  const r=R*(0.12+i*0.0615);
-  circle(r,i%2?"#80653a":"#c6a15a",i===14?2:1);
+ // Các vòng xoay lệch tốc độ nhau
+ ctx.save();
+ ctx.rotate(t*.025);
+ for(let i=0;i<25;i++){
+  const r=R*(.08+i*.036);
+  circle(
+   r,
+   i%3===0?"rgba(220,223,232,.65)":"rgba(153,159,173,.38)",
+   i%3===0?1:.55
+  );
  }
+ ctx.restore();
 
- // 360 độ vạch chia
+ // Vạch chia 360 độ
  for(let i=0;i<360;i++){
   const a=i*Math.PI/180;
-  const major=i%15===0,medium=i%5===0;
-  const r1=R*(major?.87:medium?.91:.94);
-  const r2=R*.98;
+  const major=i%15===0;
+  const medium=i%5===0;
+  const r1=R*(major?.86:medium?.91:.955);
+  const r2=R*.995;
+
   ctx.beginPath();
   ctx.moveTo(Math.sin(a)*r1,-Math.cos(a)*r1);
   ctx.lineTo(Math.sin(a)*r2,-Math.cos(a)*r2);
-  ctx.strokeStyle=major?"#f0d18b":"#76603b";
-  ctx.lineWidth=major?1.3:.5;
+
+  ctx.strokeStyle=major
+   ?"rgba(245,246,250,.9)"
+   :medium
+    ?"rgba(200,204,216,.65)"
+    :"rgba(140,145,158,.36)";
+
+  ctx.lineWidth=major?1:.45;
   ctx.stroke();
  }
 
- // 24 sơn hướng
- for(let i=0;i<24;i++){
-  label(mountains[i],R*.79,i*Math.PI/12,
-   Math.max(8,R*.032),"#e0c58a");
- }
-
- // Tám quẻ
- for(let i=0;i<8;i++){
-  const a=i*Math.PI/4;
-  label(gua[i][0],R*.66,a,Math.max(15,R*.075),"#f4d994");
-  label(gua[i][1],R*.50,a,Math.max(13,R*.064),"#e2c37e");
-  label(dirs[i],R*.88,a,Math.max(8,R*.033),
-   i===0?"#ff6247":"#c7b17d");
- }
-
- // Vòng 64 ký hiệu
- const signs=["乾","坤","震","巽","坎","離","艮","兌",
- "天","地","雷","風","水","火","山","澤"];
- for(let i=0;i<64;i++){
-  label(signs[i%16],R*.36,i*Math.PI/32,
-   Math.max(7,R*.025),i%4===0?"#e8ca83":"#a88b56");
- }
-
- // Thái cực tự xoay
+ // Vòng 24 sơn hướng
  ctx.save();
- ctx.rotate(t*.18);
- const rr=R*.115;
- ctx.beginPath();
- ctx.arc(0,0,rr,0,Math.PI*2);
- ctx.fillStyle="#e2cc94";
- ctx.fill();
-
- ctx.beginPath();
- ctx.arc(0,0,rr*.96,-Math.PI/2,Math.PI/2);
- ctx.fillStyle="#17120b";
- ctx.fill();
-
- ctx.beginPath();
- ctx.arc(0,-rr*.48,rr*.48,0,Math.PI*2);
- ctx.fillStyle="#e2cc94";
- ctx.fill();
-
- ctx.beginPath();
- ctx.arc(0,rr*.48,rr*.48,0,Math.PI*2);
- ctx.fillStyle="#17120b";
- ctx.fill();
-
- ctx.beginPath();
- ctx.arc(0,-rr*.48,rr*.10,0,Math.PI*2);
- ctx.fillStyle="#17120b";
- ctx.fill();
-
- ctx.beginPath();
- ctx.arc(0,rr*.48,rr*.10,0,Math.PI*2);
- ctx.fillStyle="#e2cc94";
- ctx.fill();
+ ctx.rotate(-t*.018);
+ for(let i=0;i<24;i++){
+  textAt(
+   mountains[i],R*.90,i*Math.PI/12,
+   Math.max(7,R*.024),"#e1e2e8"
+  );
+ }
  ctx.restore();
 
- // Mũi Bắc
+ // Các vòng ký hiệu nhỏ
+ ctx.save();
+ ctx.rotate(t*.012);
+
+ for(let i=0;i<96;i++){
+  const a=i*Math.PI/48;
+  textAt(
+   stems[(i*7)%stems.length],
+   R*.785,a,Math.max(5,R*.014),
+   i%4===0?"#e4e5eb":"#a5a9b5"
+  );
+ }
+
+ for(let i=0;i<64;i++){
+  const a=i*Math.PI/32;
+  textAt(
+   stems[(i*5+3)%stems.length],
+   R*.69,a,Math.max(5,R*.013),"#b9bdc8"
+  );
+ }
+ ctx.restore();
+
+ // Bát quái lớn
+ for(let i=0;i<8;i++){
+  const a=i*Math.PI/4;
+
+  textAt(
+   gua[i][1],R*.43,a,
+   Math.max(18,R*.073),"#f7f7fa"
+  );
+
+  textAt(
+   gua[i][0],R*.60,a,
+   Math.max(11,R*.037),"#e8e9ef"
+  );
+
+  textAt(
+   directions[i],R*.72,a,
+   Math.max(7,R*.021),"#d0d2db"
+  );
+ }
+
+ // Vòng bát quái bên trong
+ for(let i=0;i<8;i++){
+  const a=i*Math.PI/4+Math.PI/8;
+  const r=R*.32;
+
+  ctx.save();
+  ctx.rotate(a);
+  ctx.strokeStyle="rgba(220,224,234,.55)";
+  ctx.lineWidth=.8;
+  ctx.beginPath();
+  ctx.moveTo(-R*.04,-r);
+  ctx.lineTo(R*.04,-r);
+  ctx.stroke();
+  ctx.restore();
+
+  textAt(
+   gua[(i+4)%8][1],R*.28,a,
+   Math.max(9,R*.035),"#e0e2e9"
+  );
+ }
+
+ // Thái Cực xoay độc lập
+ ctx.save();
+ ctx.rotate(-t*.20);
+
+ const rr=R*.115;
+
  ctx.beginPath();
- ctx.moveTo(0,-R*.99);
- ctx.lineTo(-R*.018,-R*.91);
- ctx.lineTo(0,-R*.94);
- ctx.lineTo(R*.018,-R*.91);
+ ctx.arc(0,0,rr,0,Math.PI*2);
+ ctx.fillStyle="#f2f2f5";
+ ctx.fill();
+
+ ctx.beginPath();
+ ctx.arc(0,0,rr,Math.PI/2,-Math.PI/2);
+ ctx.fillStyle="#101114";
+ ctx.fill();
+
+ ctx.beginPath();
+ ctx.arc(0,-rr*.5,rr*.5,0,Math.PI*2);
+ ctx.fillStyle="#101114";
+ ctx.fill();
+
+ ctx.beginPath();
+ ctx.arc(0,rr*.5,rr*.5,0,Math.PI*2);
+ ctx.fillStyle="#f2f2f5";
+ ctx.fill();
+
+ ctx.beginPath();
+ ctx.arc(0,-rr*.5,rr*.105,0,Math.PI*2);
+ ctx.fillStyle="#f2f2f5";
+ ctx.fill();
+
+ ctx.beginPath();
+ ctx.arc(0,rr*.5,rr*.105,0,Math.PI*2);
+ ctx.fillStyle="#101114";
+ ctx.fill();
+
+ ctx.restore();
+
+ // Kim chỉ hướng
+ ctx.beginPath();
+ ctx.moveTo(0,-R*1.01);
+ ctx.lineTo(-R*.012,-R*.96);
+ ctx.lineTo(0,-R*.98);
+ ctx.lineTo(R*.012,-R*.96);
  ctx.closePath();
- ctx.fillStyle="#e34531";
+ ctx.fillStyle="#f4f4f7";
  ctx.fill();
 
  ctx.restore();
 }
 
+// Đường quỹ đạo đan chéo, xuất hiện theo từng đoạn
+function drawOrbits(t,zoom){
+ const w=overlay.width,h=overlay.height;
+ const s=Math.min(w,h);
+ const phase=(t%18)/18;
+
+ ctx.save();
+ ctx.translate(w/2,h/2);
+ ctx.scale(zoom,zoom);
+ ctx.lineWidth=.65;
+
+ const intensity=Math.max(0,Math.sin(phase*Math.PI*2));
+
+ if(phase>.50&&phase<.85){
+  for(let i=0;i<7;i++){
+   ctx.save();
+   ctx.rotate(t*.16+i*Math.PI/7);
+   ctx.beginPath();
+   ctx.ellipse(
+    0,0,s*(.20+i*.025),s*(.07+i*.008),
+    0,0,Math.PI*2
+   );
+   ctx.strokeStyle="rgba(210,215,230,"+
+    (.13+.15*intensity)+")";
+   ctx.stroke();
+   ctx.restore();
+  }
+ }
+ ctx.restore();
+}
+
+// Zoom theo chu kỳ: rất gần -> toàn cảnh -> rất gần
+function smooth(v){
+ v=Math.max(0,Math.min(1,v));
+ return v*v*(3-2*v);
+}
+
+function zoomCurve(t){
+ const cycle=(t%18.7)/18.7;
+
+ // Các đoạn zoom sâu theo nhịp video
+ const stops=[
+  [0.00,2.45],
+  [0.15,2.15],
+  [0.29,0.66],
+  [0.49,0.48],
+  [0.65,0.58],
+  [0.76,2.30],
+  [0.84,2.60],
+  [0.94,0.67],
+  [1.00,0.48]
+ ];
+
+ let i=0;
+ while(i<stops.length-2&&cycle>stops[i+1][0])i++;
+
+ const a=stops[i],b=stops[i+1];
+ const p=smooth((cycle-a[0])/(b[0]-a[0]));
+ return a[1]+(b[1]-a[1])*p;
+}
+
 const start=performance.now();
-let last=0;
+let last=0,lastSize="";
 
 function frame(now){
  requestAnimationFrame(frame);
- if(now-last<24)return;
+
+ if(now-last<16)return;
  last=now;
+
+ const r=canvas.getBoundingClientRect();
+ const key=Math.round(r.width)+"x"+Math.round(r.height)+
+  "@"+Math.min(devicePixelRatio||1,1.5);
+
  resize();
+ if(key!==lastSize)lastSize=key;
 
  const t=(now-start)/1000;
-
- // Zoom tuần hoàn: nhỏ -> lớn -> nhỏ
- const zoom=100+250*(50+50*Math.sin(t*500));
-
- // Phối cảnh dao động
- const tilt=100+200*Math.sin(t*300);
+ const zoom=zoomCurve(t);
 
  gl.clear(gl.COLOR_BUFFER_BIT);
  gl.uniform1f(loc.uTime,t);
  gl.uniform1f(loc.uAspect,canvas.width/canvas.height);
  gl.uniform1f(loc.uZoom,zoom);
- gl.uniform1f(loc.uTilt,tilt);
+ gl.drawArrays(gl.LINES,0,count*2);
 
- gl.drawArrays(gl.LINES,0,numLines*2);
- drawOverlay(t,zoom);
+ drawCompass(t,zoom);
+ drawOrbits(t,zoom);
 }
 
 window.addEventListener("resize",resize);
-
-// Tự khởi chạy khi mở trang
 requestAnimationFrame(frame);
 </script>
 </body>
