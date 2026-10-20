@@ -1,0 +1,354 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>La Kinh Bát Quái WebGL</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#050505;color:#e7d9ad}
+body{display:flex;align-items:center;justify-content:center;font-family:serif}
+#app{position:relative;width:min(100vw,100vh);height:min(100vw,100vh);aspect-ratio:1}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+#overlay{pointer-events:none}
+#info{position:fixed;bottom:14px;left:0;width:100%;text-align:center;font:11px Arial;color:#a99464;letter-spacing:3px}
+</style>
+</head>
+<body>
+<div id="app">
+<canvas id="gl"></canvas>
+<canvas id="overlay"></canvas>
+</div>
+<div id="info">LA KINH BÁT QUÁI · WEBGL · AUTO ANIMATION</div>
+
+<script>
+"use strict";
+
+const canvas=document.getElementById("gl");
+const overlay=document.getElementById("overlay");
+const ctx=overlay.getContext("2d");
+const gl=canvas.getContext("webgl",{
+  alpha:false,antialias:true,powerPreference:"high-performance"
+});
+
+if(!gl){
+  document.getElementById("info").textContent="Trình duyệt không hỗ trợ WebGL";
+  throw new Error("WebGL không được hỗ trợ");
+}
+
+const vertexShader=`
+attribute float aAngle;
+attribute float aRadius;
+attribute float aLength;
+attribute float aSide;
+attribute float aPhase;
+attribute float aType;
+
+uniform float uTime;
+uniform float uAspect;
+uniform float uScale;
+
+varying float vAlpha;
+varying float vType;
+
+void main(){
+  float r=aRadius;
+  float angle=aAngle;
+
+  // Chuyển động tự động liên tục
+  float speed=0.10+0.20*(1.0-r);
+  float wave=sin(uTime*1.2+aPhase)*0.0015;
+  angle+=uTime*speed+wave;
+
+  // Dao động bán kính nhẹ
+  r+=sin(uTime*0.8+aPhase)*0.0018;
+
+  float rr=r+aSide*aLength*0.5;
+  vec2 p=vec2(cos(angle),sin(angle))*rr;
+
+  p.x/=uAspect;
+  gl_Position=vec4(p*uScale,0.0,1.0);
+
+  vAlpha=0.42+0.58*(0.5+0.5*sin(uTime*1.4+aPhase));
+  vType=aType;
+
+  gl_PointSize=1.0;
+}
+`;
+
+const fragmentShader=`
+precision mediump float;
+varying float vAlpha;
+varying float vType;
+
+void main(){
+  vec3 gold=vec3(0.78,0.68,0.43);
+  vec3 pale=vec3(0.94,0.89,0.72);
+  vec3 col=mix(gold,pale,0.35+0.25*sin(vType*6.2831));
+  gl_FragColor=vec4(col,vAlpha);
+}
+`;
+
+function compile(type,source){
+  const s=gl.createShader(type);
+  gl.shaderSource(s,source);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+    throw new Error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+const program=gl.createProgram();
+gl.attachShader(program,compile(gl.VERTEX_SHADER,vertexShader));
+gl.attachShader(program,compile(gl.FRAGMENT_SHADER,fragmentShader));
+gl.linkProgram(program);
+
+if(!gl.getProgramParameter(program,gl.LINK_STATUS)){
+  throw new Error(gl.getProgramInfoLog(program));
+}
+
+gl.useProgram(program);
+
+const loc={
+ angle:gl.getAttribLocation(program,"aAngle"),
+ radius:gl.getAttribLocation(program,"aRadius"),
+ length:gl.getAttribLocation(program,"aLength"),
+ side:gl.getAttribLocation(program,"aSide"),
+ phase:gl.getAttribLocation(program,"aPhase"),
+ type:gl.getAttribLocation(program,"aType"),
+ time:gl.getUniformLocation(program,"uTime"),
+ aspect:gl.getUniformLocation(program,"uAspect"),
+ scale:gl.getUniformLocation(program,"uScale")
+};
+
+// Mỗi đoạn thẳng có hai đỉnh.
+// 40.000 đoạn = 80.000 đỉnh.
+const numLines=40000;
+const floatsPerVertex=6;
+const vertices=new Float32Array(numLines*2*floatsPerVertex);
+let seed=20261020;
+
+function rand(){
+  seed=(seed*1664525+1013904223)>>>0;
+  return seed/4294967296;
+}
+
+for(let i=0;i<numLines;i++){
+  const ring=i%10;
+  const angle=rand()*Math.PI*2;
+  const radius=0.12+0.80*rand();
+  const length=ring<3?0.004+rand()*0.014:0.002+rand()*0.008;
+  const phase=rand()*Math.PI*2;
+  const type=rand();
+
+  for(let j=0;j<2;j++){
+    const k=(i*2+j)*floatsPerVertex;
+    vertices[k]=angle;
+    vertices[k+1]=radius;
+    vertices[k+2]=length;
+    vertices[k+3]=j===0?-1:1;
+    vertices[k+4]=phase;
+    vertices[k+5]=type;
+  }
+}
+
+const buffer=gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+gl.bufferData(gl.ARRAY_BUFFER,vertices,gl.STATIC_DRAW);
+
+const stride=floatsPerVertex*4;
+[
+ ["angle",0],["radius",1],["length",2],
+ ["side",3],["phase",4],["type",5]
+].forEach(([name,index])=>{
+  gl.enableVertexAttribArray(loc[name]);
+  gl.vertexAttribPointer(loc[name],1,gl.FLOAT,false,stride,index*4);
+});
+
+gl.enable(gl.BLEND);
+gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
+gl.clearColor(0.02,0.02,0.018,1);
+
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const rect=canvas.getBoundingClientRect();
+  const w=Math.max(1,Math.round(rect.width*dpr));
+  const h=Math.max(1,Math.round(rect.height*dpr));
+
+  if(canvas.width!==w||canvas.height!==h){
+    canvas.width=w;
+    canvas.height=h;
+    overlay.width=w;
+    overlay.height=h;
+  }
+  gl.viewport(0,0,w,h);
+}
+
+function circle(r,color,width=1){
+  ctx.beginPath();
+  ctx.arc(0,0,r,0,Math.PI*2);
+  ctx.strokeStyle=color;
+  ctx.lineWidth=width;
+  ctx.stroke();
+}
+
+function textAt(text,r,a,size,color,weight="normal"){
+  ctx.save();
+  ctx.rotate(a);
+  ctx.textAlign="center";
+  ctx.textBaseline="middle";
+  ctx.font=weight+" "+size+"px serif";
+  ctx.fillStyle=color;
+  ctx.fillText(text,0,-r);
+  ctx.restore();
+}
+
+const gua=[
+ ["坎","☵"],["艮","☶"],["震","☳"],["巽","☴"],
+ ["離","☲"],["坤","☷"],["兌","☱"],["乾","☰"]
+];
+
+const directions=[
+ "北","東北","東","東南","南","西南","西","西北"
+];
+
+const mountains=[
+ "子","癸","丑","艮","寅","甲","卯","乙",
+ "辰","巽","巳","丙","午","丁","未","坤",
+ "申","庚","酉","辛","戌","乾","亥","壬"
+];
+
+function drawOverlay(t){
+  const w=overlay.width,h=overlay.height;
+  const s=Math.min(w,h);
+  const R=s*0.46;
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.clearRect(0,0,w,h);
+  ctx.save();
+  ctx.translate(w/2,h/2);
+
+  // Các vòng La Kinh
+  const rings=[.99,.94,.88,.82,.75,.68,.61,.54,.47,.40,.33,.26,.19,.12];
+  rings.forEach((r,i)=>circle(R*r,i%2?"#776039":"#b49a5e",i===0?2:1));
+
+  // Vạch chia 360 độ
+  for(let i=0;i<360;i++){
+    const a=i*Math.PI/180;
+    const major=i%15===0;
+    const medium=i%5===0;
+    const r1=R*(major?.87:medium?.91:.935);
+    const r2=R*.97;
+
+    ctx.beginPath();
+    ctx.moveTo(Math.sin(a)*r1,-Math.cos(a)*r1);
+    ctx.lineTo(Math.sin(a)*r2,-Math.cos(a)*r2);
+    ctx.strokeStyle=major?"#e4c783":"#78633f";
+    ctx.lineWidth=major?1.4:.55;
+    ctx.stroke();
+  }
+
+  // 24 sơn hướng
+  for(let i=0;i<24;i++){
+    const a=i*Math.PI/12;
+    textAt(mountains[i],R*.785,a,Math.max(8,R*.033),"#d8c391");
+  }
+
+  // 8 quẻ Bát Quái
+  for(let i=0;i<8;i++){
+    const a=i*Math.PI/4;
+    textAt(gua[i][0],R*.64,a,Math.max(15,R*.075),"#f0d99c","bold");
+    textAt(gua[i][1],R*.48,a,Math.max(13,R*.065),"#e5ca83");
+    textAt(directions[i],R*.865,a,Math.max(8,R*.033),
+      i===0?"#ff8065":"#c8b486","bold");
+  }
+
+  // Các ký hiệu vòng trong
+  const symbols=["乾","坤","震","巽","坎","離","艮","兌",
+                 "天","地","雷","風","水","火","山","澤"];
+
+  for(let i=0;i<64;i++){
+    const a=i*Math.PI/32;
+    textAt(symbols[i%symbols.length],R*.355,a,
+      Math.max(7,R*.026),i%4===0?"#e6cb8d":"#a99468");
+  }
+
+  // Thái cực
+  const rr=R*.115;
+  ctx.beginPath();
+  ctx.arc(0,0,rr,0,Math.PI*2);
+  ctx.fillStyle="#d9c18b";
+  ctx.fill();
+
+  ctx.save();
+  ctx.rotate(t*.16);
+  ctx.beginPath();
+  ctx.arc(0,0,rr*.96,-Math.PI/2,Math.PI/2);
+  ctx.fillStyle="#17140e";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0,-rr*.48,rr*.48,0,Math.PI*2);
+  ctx.fillStyle="#d9c18b";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0,rr*.48,rr*.48,0,Math.PI*2);
+  ctx.fillStyle="#17140e";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0,-rr*.48,rr*.105,0,Math.PI*2);
+  ctx.fillStyle="#17140e";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(0,rr*.48,rr*.105,0,Math.PI*2);
+  ctx.fillStyle="#d9c18b";
+  ctx.fill();
+  ctx.restore();
+
+  // Kim phương Bắc
+  ctx.beginPath();
+  ctx.moveTo(0,-R*.10);
+  ctx.lineTo(-R*.018,-R*.025);
+  ctx.lineTo(0,-R*.04);
+  ctx.lineTo(R*.018,-R*.025);
+  ctx.closePath();
+  ctx.fillStyle="#d94732";
+  ctx.fill();
+
+  ctx.restore();
+}
+
+let start=performance.now();
+let lastFrame=0;
+
+function frame(now){
+  requestAnimationFrame(frame);
+
+  // Giới hạn khoảng 40 FPS để giảm tải điện thoại
+  if(now-lastFrame<25)return;
+  lastFrame=now;
+
+  resize();
+  const t=(now-start)/1000;
+
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.uniform1f(loc.time,t);
+  gl.uniform1f(loc.aspect,canvas.width/canvas.height);
+  gl.uniform1f(loc.scale,1);
+
+  gl.drawArrays(gl.LINES,0,numLines*2);
+
+  drawOverlay(t);
+}
+
+window.addEventListener("resize",resize);
+
+// Tự chạy ngay, không cần nút khởi động.
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
